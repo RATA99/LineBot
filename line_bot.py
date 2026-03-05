@@ -39,9 +39,14 @@ HELP_TEXT = """📈 SET Stock Sniper Bot
 def webhook():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
+    app.logger.info(f"Webhook received | sig: {signature[:10]}... | body: {body[:100]}")
+    if not signature:
+        app.logger.error("Missing X-Line-Signature header")
+        abort(400)
     try:
         handler.handle(body, signature)
-    except InvalidSignatureError:
+    except InvalidSignatureError as e:
+        app.logger.error(f"Invalid signature — เช็ค LINE_CHANNEL_SECRET ใน Railway Variables | {e}")
         abort(400)
     return "OK"
 
