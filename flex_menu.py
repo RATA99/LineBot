@@ -1,12 +1,11 @@
 """
-flex_menu.py — LINE Flex Message UI
-ปุ่มเมนูที่ trigger state machine รอรับชื่อหุ้นจาก user
+flex_menu.py — LINE Flex Message UI (Carousel style)
 """
 from linebot.v3.messaging import FlexMessage, FlexContainer
 
-# ─── Main Menu (ไม่ hardcode symbol) ─────────────────────────────────────────
+# ─── Main Menu ────────────────────────────────────────────────────────────────
 def make_main_menu(symbol: str = None) -> FlexMessage:
-    subtitle = f"หุ้น: {symbol}" if symbol else "กดปุ่มเพื่อเริ่ม"
+    subtitle = f"📌 หุ้น: {symbol}" if symbol else "พิมพ์ชื่อหุ้น หรือเลือกจากเมนู"
     bubble = {
         "type": "bubble",
         "size": "mega",
@@ -16,135 +15,179 @@ def make_main_menu(symbol: str = None) -> FlexMessage:
             "backgroundColor": "#0d1117",
             "paddingAll": "16px",
             "contents": [
-                {"type": "text", "text": "📈 SET Stock Sniper", "weight": "bold",
-                 "size": "xl", "color": "#00E676"},
-                {"type": "text", "text": subtitle, "size": "sm", "color": "#888888"},
+                {"type": "text", "text": "📈 SET Stock Sniper",
+                 "weight": "bold", "size": "xl", "color": "#00E676"},
+                {"type": "text", "text": subtitle,
+                 "size": "sm", "color": "#888888", "wrap": True},
             ]
         },
         "body": {
             "type": "box",
             "layout": "vertical",
-            "spacing": "sm",
+            "spacing": "md",
             "backgroundColor": "#161b22",
             "paddingAll": "14px",
             "contents": [
-                # ── Search ──
-                _section("🔍 ค้นหาหุ้น"),
-                _row([
-                    _btn("🔎 ค้นหาหุ้น", "ค้นหา", "primary", "#FF6B35"),
-                    _btn("⭐ หุ้นยอดนิยม", "หุ้น", "secondary", "#29B6F6"),
-                ]),
-                # ── Analyze ──
-                _section("📊 วิเคราะห์"),
-                _row([
-                    _btn("🧠 วิเคราะห์ AI", "วิเคราะห์", "primary", "#FF6B35"),
-                    _btn("💰 ดูราคา", "ราคา", "secondary", "#29B6F6"),
-                ]),
-                # ── Chart ──
-                _section("📉 กราฟ"),
-                _row([
-                    _btn("📊 กราฟ (เลือก TF)", "กราฟ", "secondary", "#26a69a"),
-                    _btn("🗂 ครบ 5 TF", "กราฟทั้งหมด", "primary", "#CE93D8"),
-                ]),
-                # ── Alert ──
-                _section("🔔 แจ้งเตือน"),
-                _row([
-                    _btn("➕ เพิ่มแจ้งเตือน", "แจ้งเตือน", "primary", "#00E676"),
-                    _btn("📋 รายการ", "รายการ", "secondary", "#FFC107"),
-                ]),
+                # ── ค้นหา ──
+                _full_btn("🔎  ค้นหาหุ้น  (พิมพ์ชื่อใดก็ได้)", "ค้นหา", "#FF6B35"),
+                _full_btn("⭐  หุ้นยอดนิยม", "หุ้น", "#FFC107"),
+                _divider(),
+                # ── วิเคราะห์ ──
+                _label("📊 วิเคราะห์"),
+                _full_btn("🔥  SCAN หาหุ้น Breakout + Volume", "สแกน", "#ef5350"),
+                _two_btn("🧠 AI วิเคราะห์", "วิเคราะห์", "#FF6B35",
+                         "💰 ดูราคา",      "ราคา",      "#29B6F6"),
+                _divider(),
+                # ── กราฟ ──
+                _label("📉 กราฟ"),
+                _two_btn("📊 กราฟ (เลือก TF)", "กราฟ",        "#26a69a",
+                         "🗂 ครบ 5 TF",       "กราฟทั้งหมด", "#CE93D8"),
+                _divider(),
+                # ── แจ้งเตือน ──
+                _label("🔔 แจ้งเตือน"),
+                _two_btn("➕ เพิ่มแจ้งเตือน", "แจ้งเตือน", "#00E676",
+                         "📋 รายการ",         "รายการ",    "#888888"),
             ]
         },
         "footer": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#0d1117",
-            "paddingAll": "10px",
+            "type": "box", "layout": "vertical",
+            "backgroundColor": "#0d1117", "paddingAll": "10px",
             "contents": [{
                 "type": "button",
-                "action": {"type": "message", "label": "❓ ช่วยเหลือ", "text": "ช่วยเหลือ"},
-                "style": "secondary",
-                "color": "#21262d",
-                "height": "sm"
+                "action": {"type": "message", "label": "❓ วิธีใช้", "text": "ช่วยเหลือ"},
+                "style": "secondary", "color": "#21262d", "height": "sm"
             }]
         }
     }
-    return FlexMessage(alt_text="SET Stock Sniper Menu",
+    return FlexMessage(alt_text="SET Stock Sniper",
                        contents=FlexContainer.from_dict(bubble))
 
 
+# ─── Symbol Picker — Carousel (1 แถว 3 ตัว ไม่ตัดคำ) ─────────────────────────
 def make_symbol_picker() -> FlexMessage:
-    """Quick pick หุ้นยอดนิยม — กดแล้วแสดงเมนูของหุ้นนั้นเลย"""
-    symbols = [
-        ("DELTA", "#FF6B35"), ("PTT", "#29B6F6"),   ("AOT", "#00E676"),
-        ("ADVANC","#FFC107"), ("SCB", "#CE93D8"),   ("KBANK","#ef5350"),
-        ("BBL",  "#80CBC4"), ("CPALL","#FF6B35"),   ("TRUE", "#29B6F6"),
-        ("GULF", "#00E676"), ("MINT", "#FFC107"),   ("CPN", "#CE93D8"),
+    groups = [
+        [("DELTA","#FF6B35"), ("PTT",  "#29B6F6"), ("AOT",  "#00E676")],
+        [("ADVANC","#FFC107"),("SCB",  "#CE93D8"), ("KBANK","#ef5350")],
+        [("BBL",  "#80CBC4"), ("CPALL","#FF6B35"), ("TRUE", "#29B6F6")],
+        [("GULF", "#00E676"), ("MINT", "#FFC107"), ("CPN",  "#CE93D8")],
+    ]
+
+    bubbles = []
+    for group in groups:
+        rows = []
+        for sym, color in group:
+            rows.append({
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "xs",
+                "margin": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "action": {"type": "message",
+                                   "label": sym,
+                                   "text": f"เมนู {sym}"},
+                        "style": "primary",
+                        "color": color,
+                        "height": "sm",
+                    },
+                    {
+                        "type": "button",
+                        "action": {"type": "message",
+                                   "label": f"📊 กราฟ {sym}",
+                                   "text": f"กราฟ {sym} 1d"},
+                        "style": "secondary",
+                        "color": "#21262d",
+                        "height": "sm",
+                    },
+                ]
+            })
+
+        bubbles.append({
+            "type": "bubble",
+            "size": "kilo",
+            "header": {
+                "type": "box", "layout": "vertical",
+                "backgroundColor": "#0d1117", "paddingAll": "10px",
+                "contents": [{"type": "text", "text": "⭐ หุ้นยอดนิยม",
+                               "weight": "bold", "size": "md", "color": "#FFC107"}]
+            },
+            "body": {
+                "type": "box", "layout": "vertical",
+                "backgroundColor": "#161b22", "paddingAll": "10px",
+                "spacing": "sm",
+                "contents": rows
+            }
+        })
+
+    carousel = {"type": "carousel", "contents": bubbles}
+    return FlexMessage(alt_text="หุ้นยอดนิยม",
+                       contents=FlexContainer.from_dict(carousel))
+
+
+# ─── TF Picker ────────────────────────────────────────────────────────────────
+def make_tf_picker(symbol: str) -> FlexMessage:
+    tfs = [
+        ("15m","15 นาที",  "#80CBC4"),
+        ("30m","30 นาที",  "#26a69a"),
+        ("1h", "1 ชั่วโมง","#29B6F6"),
+        ("4h", "4 ชั่วโมง","#FFC107"),
+        ("1d", "รายวัน",   "#FF6B35"),
     ]
     rows = []
-    for i in range(0, len(symbols), 3):
-        chunk = symbols[i:i+3]
-        rows.append(_row([_btn(s, f"เมนู {s}", "secondary", c) for s, c in chunk]))
+    for tf, label, color in tfs:
+        rows.append({
+            "type": "box",
+            "layout": "horizontal",
+            "spacing": "sm",
+            "margin": "sm",
+            "contents": [
+                {
+                    "type": "button",
+                    "action": {"type": "message",
+                               "label": f"📊 {label}",
+                               "text": f"กราฟ {symbol} {tf}"},
+                    "style": "primary",
+                    "color": color,
+                    "height": "sm",
+                    "flex": 1
+                }
+            ]
+        })
+
+    # ปุ่ม All TF
+    rows.append({
+        "type": "box",
+        "layout": "horizontal",
+        "margin": "md",
+        "contents": [{
+            "type": "button",
+            "action": {"type": "message",
+                       "label": f"🗂  ครบทุก TF ({symbol})",
+                       "text": f"กราฟทั้งหมด {symbol}"},
+            "style": "primary",
+            "color": "#CE93D8",
+            "height": "sm",
+        }]
+    })
 
     bubble = {
         "type": "bubble",
-        "size": "mega",
+        "size": "kilo",
         "header": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#0d1117",
-            "paddingAll": "14px",
+            "type": "box", "layout": "vertical",
+            "backgroundColor": "#0d1117", "paddingAll": "12px",
             "contents": [
-                {"type": "text", "text": "⭐ หุ้นยอดนิยม", "weight": "bold",
-                 "size": "lg", "color": "#FFC107"},
-                {"type": "text",
-                 "text": "หรือพิมพ์ชื่อหุ้นเองได้เลย เช่น: เมนู DELTA",
-                 "size": "xs", "color": "#666666", "wrap": True},
+                {"type": "text", "text": "📉 เลือก Timeframe",
+                 "weight": "bold", "size": "md", "color": "#00E676"},
+                {"type": "text", "text": f"หุ้น: {symbol}",
+                 "size": "sm", "color": "#888888"},
             ]
         },
         "body": {
-            "type": "box", "layout": "vertical", "spacing": "sm",
+            "type": "box", "layout": "vertical",
             "backgroundColor": "#161b22", "paddingAll": "12px",
             "contents": rows
-        }
-    }
-    return FlexMessage(alt_text="เลือกหุ้น",
-                       contents=FlexContainer.from_dict(bubble))
-
-
-def make_tf_picker(symbol: str) -> FlexMessage:
-    """เลือก Timeframe สำหรับหุ้นที่ระบุ"""
-    tfs = [
-        ("15m", "15 นาที", "#80CBC4"),
-        ("30m", "30 นาที", "#26a69a"),
-        ("1h",  "1 ชั่วโมง","#29B6F6"),
-        ("4h",  "4 ชั่วโมง","#FFC107"),
-        ("1d",  "รายวัน",   "#FF6B35"),
-    ]
-    bubble = {
-        "type": "bubble",
-        "size": "mega",
-        "header": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#0d1117",
-            "paddingAll": "14px",
-            "contents": [
-                {"type": "text", "text": f"📉 เลือก Timeframe — {symbol}",
-                 "weight": "bold", "size": "md", "color": "#00E676"},
-            ]
-        },
-        "body": {
-            "type": "box", "layout": "vertical", "spacing": "sm",
-            "backgroundColor": "#161b22", "paddingAll": "12px",
-            "contents": [
-                _row([_btn(label, f"กราฟ {symbol} {tf}", "secondary", color)
-                      for tf, label, color in tfs[:3]]),
-                _row([
-                    _btn(tfs[3][1], f"กราฟ {symbol} {tfs[3][0]}", "secondary", tfs[3][2]),
-                    _btn(tfs[4][1], f"กราฟ {symbol} {tfs[4][0]}", "secondary", tfs[4][2]),
-                    _btn("🗂 ทั้งหมด", f"กราฟทั้งหมด {symbol}", "primary", "#CE93D8"),
-                ]),
-            ]
         }
     }
     return FlexMessage(alt_text=f"เลือก TF — {symbol}",
@@ -152,19 +195,29 @@ def make_tf_picker(symbol: str) -> FlexMessage:
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-def _section(text: str) -> dict:
-    return {"type": "text", "text": text, "size": "xs",
-            "color": "#555555", "margin": "md"}
+def _label(text: str) -> dict:
+    return {"type": "text", "text": text, "size": "sm",
+            "color": "#aaaaaa", "margin": "sm"}
 
-def _btn(label: str, msg: str, style: str = "secondary", color: str = "#29B6F6") -> dict:
+def _divider() -> dict:
+    return {"type": "separator", "margin": "sm", "color": "#21262d"}
+
+def _full_btn(label: str, msg: str, color: str) -> dict:
     return {
         "type": "button",
         "action": {"type": "message", "label": label, "text": msg},
-        "style": style,
-        "color": color if style == "primary" else "#21262d",
-        "height": "sm", "flex": 1
+        "style": "primary", "color": color, "height": "sm", "margin": "sm"
     }
 
-def _row(buttons: list) -> dict:
-    return {"type": "box", "layout": "horizontal",
-            "spacing": "sm", "contents": buttons}
+def _two_btn(l1, m1, c1, l2, m2, c2) -> dict:
+    return {
+        "type": "box", "layout": "horizontal", "spacing": "sm", "margin": "xs",
+        "contents": [
+            {"type": "button",
+             "action": {"type": "message", "label": l1, "text": m1},
+             "style": "primary", "color": c1, "height": "sm", "flex": 1},
+            {"type": "button",
+             "action": {"type": "message", "label": l2, "text": m2},
+             "style": "primary", "color": c2, "height": "sm", "flex": 1},
+        ]
+    }

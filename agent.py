@@ -63,6 +63,9 @@ def keyword_parse(text: str) -> dict | None:
     if any(k in t for k in ['ราคา','price','ราคาเท่า','เท่าไร','เป็นยังไง','เป็นไง','อยู่ที่']):
         return {"action": "price", "symbol": symbol, "tf": tf, "confidence": 0.92}
 
+    if any(k in t for k in ['สแกน','scan','breakout','เบรก','เบรคเอ้าท์','วิ่ง','ระเบิด','ปิดทอง','หาหุ้น','หุ้นน่าซื้อ','หุ้นวิ่ง']):
+        return {"action": "scan", "symbol": None, "tf": tf, "confidence": 0.92}
+
     return None  # ไม่ match → ให้ AI ลอง
 
 # ─── AI parse ────────────────────────────────────────────────────────────────

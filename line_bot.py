@@ -1,6 +1,5 @@
 """
-LINE Bot — SET Stock Sniper + AI Agent
-ไม่ต้องพิมพ์ตรงๆ AI เข้าใจ natural language
+LINE Bot - SET Stock Sniper + AI Agent + Market Scanner
 """
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
@@ -18,6 +17,7 @@ from chart import get_chart_url
 from flex_menu import make_main_menu, make_symbol_picker, make_tf_picker
 from notifier import start_monitor, push_message, add_watchlist, remove_watchlist, get_watchlist
 from agent import parse_intent
+from scanner import run_scan
 
 app = Flask(__name__)
 
@@ -30,13 +30,13 @@ handler       = WebhookHandler(LINE_CHANNEL_SECRET)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers.get("X-Line-Signature", "")
-    body      = request.get_data(as_text=True)
+    body = request.get_data(as_text=True)
     if not signature:
         abort(400)
     try:
         handler.handle(body, signature)
     except InvalidSignatureError as e:
-        app.logger.error(f"Invalid signature: {e}")
+        app.logger.error("Invalid signature: {}".format(e))
         abort(400)
     return "OK"
 
@@ -47,31 +47,22 @@ def health():
 # ─── Message Handler ──────────────────────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    text    = event.message.text.strip()
+    text = event.message.text.strip()
     user_id = event.source.user_id
-
-    # ส่งให้ AI Agent ตีความก่อนเสมอ แล้ว execute
     def process():
         intent = parse_intent(text)
         execute_intent(intent, user_id, event)
-
-    # ทำใน thread ป้องกัน timeout 5 วิของ LINE
     threading.Thread(target=process, daemon=True).start()
 
-    # reply ทันทีว่ากำลังคิด (ป้องกัน LINE timeout)
-    # แต่ถ้า action เร็ว (menu/popular/help) จะ reply จาก thread แทน
-    # ดังนั้น reply token จะถูกใช้ใน thread เท่านั้น
+# ─── Intent Executor ─────────────────────────────────────────────────────────
+def execute_intent(intent, user_id, event):
+    action = intent.get("action", "unknown")
+    symbol = intent.get("symbol")
+    tf     = intent.get("tf") or "1d"
+    conf   = intent.get("confidence", 0)
 
-# ─── Intent executor ─────────────────────────────────────────────────────────
-def execute_intent(intent: dict, user_id: str, event):
-    action  = intent.get("action", "unknown")
-    symbol  = intent.get("symbol")
-    tf      = intent.get("tf") or "1d"
-    conf    = intent.get("confidence", 0)
-
-    # confidence ต่ำเกินไป → ถามใหม่
     if conf < 0.5 and action == "unknown":
-        reply_text(event, "ขอโทษครับ ไม่แน่ใจว่าต้องการอะไร 🤔\nลองพิมพ์ใหม่ หรือกด 'เมนู' เพื่อดูตัวเลือก")
+        reply_text(event, "ไม่แน่ใจครับ ลองพิมพ์ใหม่ หรือพิมพ์ 'เมนู'")
         return
 
     if action == "menu":
@@ -81,110 +72,141 @@ def execute_intent(intent: dict, user_id: str, event):
         reply_flex(event, make_symbol_picker())
 
     elif action == "help":
-        reply_text(event, """📈 SET Stock Sniper — AI Agent
+        reply_text(event,
+            "SET Stock Sniper - AI Agent\n\n"
+            "พิมพ์อะไรก็ได้ เช่น:\n"
+            "- ดูกราฟ delta ชั่วโมง\n"
+            "- ptt ราคาเท่าไร\n"
+            "- วิเคราะห์ kbank\n"
+            "- สแกนหาหุ้น breakout\n"
+            "- กราฟ scb ทุก tf\n"
+            "- แจ้งเตือน aot\n"
+            "- หุ้นยอดนิยม"
+        )
 
-พิมพ์อะไรก็ได้ครับ เช่น:
-• "ดูกราฟ delta แบบ 1 ชั่วโมง"
-• "ptt ราคาเป็นยังไงบ้าง"
-• "วิเคราะห์ kbank ให้หน่อย"
-• "กราฟ scb ทุก TF เลย"
-• "แจ้งเตือนถ้า aot มีสัญญาณ"
-• "หุ้นน่าสนใจมีอะไรบ้าง"
-
-ไม่ต้องพิมพ์ตรงๆ AI เข้าใจได้ 🤖""")
+    elif action == "scan":
+        reply_text(event, "Scanning SET market... ใช้เวลา 30-60 วินาทีครับ")
+        def do_scan():
+            try:
+                candidates, summary, ai_text = run_scan()
+                if not candidates:
+                    push_message(user_id, "ไม่พบสัญญาณ Breakout วันนี้ครับ")
+                    return
+                push_message(user_id, summary)
+                if ai_text:
+                    header = "=== AI Entry/Exit Analysis ===\n\n"
+                    push_message(user_id, header + ai_text)
+            except Exception as e:
+                push_message(user_id, "Scan Error: {}".format(e))
+        threading.Thread(target=do_scan, daemon=True).start()
 
     elif action == "price":
         if not symbol:
-            reply_text(event, "บอกชื่อหุ้นด้วยนะครับ เช่น 'ราคา DELTA'")
+            reply_text(event, "บอกชื่อหุ้นด้วยครับ เช่น ราคา DELTA")
             return
         reply_text(event, get_alert_message(symbol))
 
     elif action == "analyze":
         if not symbol:
-            reply_text(event, "บอกชื่อหุ้นด้วยนะครับ เช่น 'วิเคราะห์ DELTA'")
+            reply_text(event, "บอกชื่อหุ้นด้วยครับ เช่น วิเคราะห์ DELTA")
             return
-        reply_text(event, f"🧠 กำลังวิเคราะห์ {symbol}...\nใช้เวลา 15-30 วินาทีครับ")
+        reply_text(event, "กำลังวิเคราะห์ {}... ใช้เวลา 15-30 วินาทีครับ".format(symbol))
         def do():
             push_message(user_id, analyze_stock(symbol))
         threading.Thread(target=do, daemon=True).start()
 
     elif action == "chart":
         if not symbol:
-            reply_text(event, "บอกชื่อหุ้นด้วยนะครับ เช่น 'กราฟ DELTA 1h'")
+            reply_text(event, "บอกชื่อหุ้นด้วยครับ เช่น กราฟ DELTA 1h")
             return
-        reply_text(event, f"📊 กำลังสร้างกราฟ {symbol} [{tf.upper()}]...")
+        reply_text(event, "กำลังสร้างกราฟ {} [{}]...".format(symbol, tf.upper()))
         def do():
             url, err = get_chart_url(symbol, tf)
-            if err: push_message(user_id, err)
-            else:   push_img(user_id, url)
+            if err:
+                push_message(user_id, err)
+            else:
+                push_img(user_id, url)
         threading.Thread(target=do, daemon=True).start()
 
     elif action == "chart_all":
         if not symbol:
-            reply_text(event, "บอกชื่อหุ้นด้วยนะครับ เช่น 'กราฟ DELTA ทุก TF'")
+            reply_text(event, "บอกชื่อหุ้นด้วยครับ เช่น กราฟ DELTA ทุก TF")
             return
-        reply_text(event, f"📊 กำลังสร้างกราฟ {symbol} ครบ 5 TF...\nใช้เวลาสักครู่นะครับ")
+        reply_text(event, "กำลังสร้างกราฟ {} ครบ 5 TF...".format(symbol))
         def do():
             for t in ["15m", "30m", "1h", "4h", "1d"]:
                 url, err = get_chart_url(symbol, t)
-                if err: push_message(user_id, f"⚠️ {t}: {err}")
-                else:   push_img(user_id, url)
+                if err:
+                    push_message(user_id, "{}: {}".format(t, err))
+                else:
+                    push_img(user_id, url)
                 time.sleep(1.5)
         threading.Thread(target=do, daemon=True).start()
 
     elif action == "alert_add":
         if not symbol:
-            reply_text(event, "บอกชื่อหุ้นด้วยนะครับ เช่น 'แจ้งเตือน DELTA'")
+            reply_text(event, "บอกชื่อหุ้นด้วยครับ เช่น แจ้งเตือน DELTA")
             return
         add_watchlist(symbol, user_id)
-        reply_text(event, f"✅ เพิ่ม {symbol} ในรายการแจ้งเตือนแล้วครับ\nจะ push เมื่อสัญญาณเปลี่ยน")
+        reply_text(event, "เพิ่ม {} ในรายการแจ้งเตือนแล้วครับ".format(symbol))
 
     elif action == "alert_remove":
         if not symbol:
-            reply_text(event, "บอกชื่อหุ้นด้วยนะครับ เช่น 'ยกเลิกแจ้งเตือน DELTA'")
+            reply_text(event, "บอกชื่อหุ้นด้วยครับ เช่น ยกเลิกแจ้งเตือน DELTA")
             return
         remove_watchlist(symbol, user_id)
-        reply_text(event, f"🔕 ลบ {symbol} ออกจากรายการแล้วครับ")
+        reply_text(event, "ลบ {} ออกจากรายการแล้วครับ".format(symbol))
 
     elif action == "alert_list":
         wl = get_watchlist(user_id)
-        msg = "📋 รายการแจ้งเตือน:\n" + "\n".join([f"• {s}" for s in wl]) if wl \
-              else "📋 ยังไม่มีหุ้นในรายการครับ"
+        if wl:
+            msg = "รายการแจ้งเตือน:\n" + "\n".join(["- " + s for s in wl])
+        else:
+            msg = "ยังไม่มีหุ้นในรายการครับ"
         reply_text(event, msg)
 
     else:
-        # unknown — แสดงเมนู
         reply_flex(event, make_main_menu())
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-def reply_text(event, text: str):
+# ─── Reply Helpers ────────────────────────────────────────────────────────────
+def reply_text(event, text):
     try:
         with ApiClient(configuration) as api:
             MessagingApi(api).reply_message_with_http_info(
-                ReplyMessageRequest(reply_token=event.reply_token,
-                                    messages=[TextMessage(text=text)]))
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=text)]
+                )
+            )
     except Exception as e:
-        print(f"[reply_text] {e}")
+        print("reply_text error: {}".format(e))
 
-def reply_flex(event, flex: FlexMessage):
+def reply_flex(event, flex):
     try:
         with ApiClient(configuration) as api:
             MessagingApi(api).reply_message_with_http_info(
-                ReplyMessageRequest(reply_token=event.reply_token,
-                                    messages=[flex]))
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[flex]
+                )
+            )
     except Exception as e:
-        print(f"[reply_flex] {e}")
+        print("reply_flex error: {}".format(e))
 
-def push_img(user_id: str, url: str):
+def push_img(user_id, url):
     try:
         with ApiClient(configuration) as api:
             MessagingApi(api).push_message(
-                PushMessageRequest(to=user_id,
-                                   messages=[ImageMessage(
-                                       original_content_url=url,
-                                       preview_image_url=url)]))
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[ImageMessage(
+                        original_content_url=url,
+                        preview_image_url=url
+                    )]
+                )
+            )
     except Exception as e:
-        print(f"[push_img] {e}")
+        print("push_img error: {}".format(e))
 
 # ─── Start ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
